@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  fastapi_server:
+    container_name: ${PROJECT_NAME}_fastapi_server
+    image: flobot/fastapi-neomodel-async:latest
+    restart: always
+    command: "sh -c 'python app/initial_data.py && gunicorn -w 3 -k uvicorn.workers.UvicornWorker app.main:app  --bind 0.0.0.0:8000 --preload --log-level=debug --timeout 120'"
+    volumes:
+      - ./backend/app:/code
+    expose:
+      - 8000
+    env_file: ".env"
+    depends_on:
+      - database
+    links:
+      - caddy_reverse_proxy:storage.localhost
+  
+  database:
+    image: neo4j:${N4J_VERSION}
+    env_file: ".env"
+    container_name: ${PROJECT_NAME}_database
+    restart: unless-stopped
+    volumes:
+      - ./neo4j/data:/data
+      - ./neo4j/logs:/logs
+      - ./neo4j/import:/var/lib/neo4j/import
+      - ./neo4j/plugins:/plugins
+    ports:
+      - 7474:7474
+      - 7687:7687 
+      - 2006:2006
+    environment:
+      # General
+      #- NEO4J_server_config_strict__validation_enabled=false # https://stackoverflow.com/questions/76207890/neo4j-docker-compose-to-kubernetes/77261518
+      - NEO4J_AUTH=${NEO4J_AUTH}
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+      # APOC & gds  plugins:
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.*,algo.*
+      - NEO4J_PLUGINS=["apoc", "graph-data-science"]
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*,gds.*,algo.*
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4J_apoc_trigger_enabled=true
+      # Communication
+      - NEO4J_server_http_advertised__address=localhost:7687
+      - NEO4J_server_bolt_advertised__address=localhost:7474
+      # Metrics (only available in enterprise edition)
+      #- NEO4J_server_metrics_csv_enabled=false
+      #- NEO4J_server_metrics_prometheus_enabled=true
+      #- NEO4J_server_metrics_prometheus_endpoint=0.0.0.0:2006
+    healthcheck:
+      test: wget localhost:7474 || exit 1
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 120s  
+
+    restart: always
+    volumes:
+      - ./db_docker:/bitnami/postgresql
+    ports:
+      - 5454:5432 # Remove this on production
+    expose:
+      - 5432
+    environment:
+      - POSTGRES_USERNAME=${DATABASE_USER}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_DATABASE=${DATABASE_NAME}
+      - POSTGRES_HOST_AUTH_METHOD= "trust"
+
+      
+  redis_server:
+    container_name: ${PROJECT_NAME}_redis_server
+    image: "redis:alpine"
+    restart: always
+    expose:
+      - 6379
+    env_file: .env
+
+  minio_server:
+    container_name: ${PROJECT_NAME}_minio_server
+    image: minio/minio:latest
+    restart: always
+    volumes:
+      - ./minio/data:/data
+    expose:
+      - 9000
+      - 9091
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER_REDIRECT_URL: http://stash.localhost
+    command: "server /data --console-address ':9090'"  
+
+  caddy_reverse_proxy:
+    container_name: ${PROJECT_NAME}_caddy_reverse_proxy
+    image: caddy:alpine
+    restart: always
+    ports:
+      - 80:80      
+      - 443:443
+    environment:
+      - EXT_ENDPOINT1=${EXT_ENDPOINT1}
+      - LOCAL_1=${LOCAL_1}
+      - LOCAL_2=${LOCAL_2}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./static:/code/static
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
