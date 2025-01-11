@@ -1,31 +1,23 @@
-# https://stackoverflow.com/questions/75252097/fastapi-testing-runtimeerror-task-attached-to-a-different-loop/75444607#75444607
-from sqlalchemy.orm import sessionmaker
-from app.core.config import ModeEnum, settings
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.pool import NullPool, QueuePool
+from neomodel import config
+from neomodel.async_.core import AsyncNeo4jDriver
+from app.core.config import settings
+from contextlib import asynccontextmanager
 
-DB_POOL_SIZE = 83
-WEB_CONCURRENCY = 9
-POOL_SIZE = max(DB_POOL_SIZE // WEB_CONCURRENCY, 5)
+# Configure neomodel async driver
+config.DATABASE_URL = settings.NEO4J_BOLT_URL
+config.MAX_CONNECTION_POOL_SIZE = 50
+config.ENCRYPTED_CONNECTION = True
+config.FORCE_TIMEZONE = True  # Ensure datetime objects have timezone info
 
-connect_args = {"check_same_thread": False}
+driver = AsyncNeo4jDriver()
 
-engine = create_async_engine(
-    settings.ASYNC_DATABASE_URI,
-    echo=False,
-    future=True,
-    # pool_size=POOL_SIZE,
-    # max_overflow=64,
-    poolclass=NullPool
-    if settings.MODE == ModeEnum.testing
-    else QueuePool,  # Asincio pytest works with NullPool
-)
-
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+@asynccontextmanager
+async def get_db():
+    """Get an async database session context manager"""
+    try:
+        # Start a new session
+        session = driver.session()
+        yield session
+    finally:
+        # Ensure session is closed
+        await session.close()

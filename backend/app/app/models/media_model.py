@@ -1,17 +1,17 @@
 from app.models.base_uuid_model import BaseUUIDModel
-from sqlmodel import SQLModel
+from pydantic import BaseModel
 from app.utils.minio_client import MinioClient
 from app.core.config import settings
 from app import api
 
 
-class MediaBase(SQLModel):
+class MediaBase(BaseModel):
     title: str | None
     description: str | None
     path: str | None
 
 
-class Media(BaseUUIDModel, MediaBase, table=True):
+class Media(MediaBase):
     @property
     def link(self) -> str | None:
         if self.path is None:

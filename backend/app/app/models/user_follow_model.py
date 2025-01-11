@@ -1,13 +1,14 @@
-from uuid import UUID
-
-from app.models.base_uuid_model import BaseUUIDModel, SQLModel
-from sqlmodel import Column, Field, Boolean
-
-
-class UserFollowBase(SQLModel):
-    user_id: UUID = Field(nullable=False)
-    target_user_id: UUID = Field(nullable=False)
+from datetime import datetime
+from neomodel import (
+    BooleanProperty,
+    DateTimeProperty,
+    StructuredRel
+)
 
 
-class UserFollow(BaseUUIDModel, UserFollowBase, table=True):
-    is_mutual: bool | None = Field(sa_column=Column(Boolean(), server_default="0"))
+class UserFollowRel(StructuredRel):
+    """Model for relationship properties between users"""
+    is_mutual = BooleanProperty(default=False)
+    followed_at = DateTimeProperty(
+        default=lambda: datetime.now(datetime.timezone.utc)
+    )

@@ -1,20 +1,14 @@
+from app.utils.uuid6 import uuid7, UUID
 from .media_model import Media
 from app.models.base_uuid_model import BaseUUIDModel
-from uuid import UUID
-from sqlmodel import Field, SQLModel, Relationship
+from neomodel import StringProperty, IntProperty, UniqueIdProperty, RelationshipTo
+
+class ImageMediaBase(BaseUUIDModel):
+    file_format = StringProperty(default=None)
+    width = IntProperty(default=None)
+    height = IntProperty(default=None)
 
 
-class ImageMediaBase(SQLModel):
-    file_format: str | None
-    width: int | None
-    height: int | None
-
-
-class ImageMedia(BaseUUIDModel, ImageMediaBase, table=True):
-    media_id: UUID | None = Field(default=None, foreign_key="Media.id")
-    media: Media = Relationship(
-        sa_relationship_kwargs={
-            "lazy": "joined",
-            "primaryjoin": "ImageMedia.media_id==Media.id",
-        }
-    )
+class ImageMedia(ImageMediaBase):
+    media_id = UniqueIdProperty(default=uuid7)
+    media = RelationshipTo('Media', 'HAS_MEDIA')

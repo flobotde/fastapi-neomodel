@@ -1,57 +1,36 @@
 from app.models.base_uuid_model import BaseUUIDModel
-from app.models.links_model import LinkGroupUser
 from app.models.image_media_model import ImageMedia
 from app.schemas.common_schema import IGenderEnum
-from datetime import datetime
-from sqlmodel import BigInteger, Field, SQLModel, Relationship, Column, DateTime, String
-from typing import Optional
-from sqlalchemy_utils import ChoiceType
-from pydantic import EmailStr
-from uuid import UUID
+from neomodel import (StringProperty, BooleanProperty, DateTimeProperty, 
+                     RelationshipTo, RelationshipFrom, EmailProperty)
 
 
-class UserBase(SQLModel):
-    first_name: str
-    last_name: str
-    email: EmailStr = Field(
-        nullable=True, index=True, sa_column_kwargs={"unique": True}
-    )
-    is_active: bool = Field(default=True)
-    is_superuser: bool = Field(default=False)
-    birthdate: datetime | None = Field(
-        sa_column=Column(DateTime(timezone=True), nullable=True)
-    )  # birthday with timezone
-    role_id: UUID | None = Field(default=None, foreign_key="Role.id")
-    phone: str | None
-    gender: IGenderEnum | None = Field(
-        default=IGenderEnum.other,
-        sa_column=Column(ChoiceType(IGenderEnum, impl=String())),
-    )
-    state: str | None
-    country: str | None
-    address: str | None
+class UserBase(BaseUUIDModel):
+    first_name = StringProperty(required=True)
+    last_name = StringProperty(required=True)
+    email = EmailProperty(unique_index=True, required=True)
+    is_active = BooleanProperty(default=True)
+    is_superuser = BooleanProperty(default=False)
+    birthdate = DateTimeProperty(default=None)  # birthday with timezone
+    phone = StringProperty(default=None)
+    gender = StringProperty(choices=dict(IGenderEnum), default=IGenderEnum.other)
+    state = StringProperty(default=None)
+    country = StringProperty(default=None)
+    address = StringProperty(default=None)
 
 
-class User(BaseUUIDModel, UserBase, table=True):
-    hashed_password: str | None = Field(nullable=False, index=True)
-    role: Optional["Role"] = Relationship(  # noqa: F821
-        back_populates="users", sa_relationship_kwargs={"lazy": "joined"}
-    )
-    groups: list["Group"] = Relationship(  # noqa: F821
-        back_populates="users",
-        link_model=LinkGroupUser,
-        sa_relationship_kwargs={"lazy": "selectin"},
-    )
-    image_id: UUID | None = Field(default=None, foreign_key="ImageMedia.id")
-    image: ImageMedia = Relationship(
-        sa_relationship_kwargs={
-            "lazy": "joined",
-            "primaryjoin": "User.image_id==ImageMedia.id",
-        }
-    )
-    follower_count: int | None = Field(
-        sa_column=Column(BigInteger(), server_default="0")
-    )
-    following_count: int | None = Field(
-        sa_column=Column(BigInteger(), server_default="0")
-    )
+class User(UserBase):
+    hashed_password = StringProperty(required=True)
+    
+    # Relationships
+    role = RelationshipTo('Role', 'HAS_ROLE')
+    groups = RelationshipTo('Group', 'BELONGS_TO')
+    image = RelationshipTo(ImageMedia, 'HAS_IMAGE')
+    
+    # Follow relationships
+    followers = RelationshipFrom('User', 'FOLLOWS')
+    following = RelationshipTo('User', 'FOLLOWS')
+    
+    # Count properties
+    follower_count = StringProperty(default="0")
+    following_count = StringProperty(default="0")

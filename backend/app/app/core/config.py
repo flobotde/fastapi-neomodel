@@ -1,5 +1,5 @@
 import os
-from pydantic import BaseSettings, PostgresDsn, validator, EmailStr, AnyHttpUrl
+from pydantic import BaseSettings, validator, EmailStr, AnyHttpUrl
 from typing import Any
 import secrets
 from enum import Enum
@@ -29,20 +29,17 @@ class Settings(BaseSettings):
     DB_POOL_SIZE = 83
     WEB_CONCURRENCY = 9
     POOL_SIZE = max(DB_POOL_SIZE // WEB_CONCURRENCY, 5)
-    ASYNC_DATABASE_URI: PostgresDsn | None
+    # Neo4j settings
+    NEO4J_BOLT_URL: str = "bolt://neo4j:neo4j@localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "neo4j"
 
-    @validator("ASYNC_DATABASE_URI", pre=True)
-    def assemble_db_connection(cls, v: str | None, values: dict[str, Any]) -> Any:
+
+    @validator("NEO4J_BOLT_URL", pre=True)
+    def assemble_neo4j_url(cls, v: str | None, values: dict[str, Any]) -> str:
         if isinstance(v, str):
             return v
-        return PostgresDsn.build(
-            scheme="postgresql+asyncpg",
-            user=values.get("DATABASE_USER"),
-            password=values.get("DATABASE_PASSWORD"),
-            host=values.get("DATABASE_HOST"),
-            port=str(values.get("DATABASE_PORT")),
-            path=f"/{values.get('DATABASE_NAME') or ''}",
-        )
+        return f"bolt://{values.get('NEO4J_USER')}:{values.get('NEO4J_PASSWORD')}@{values.get('NEO4J_HOST')}:{values.get('NEO4J_PORT')}"
 
     FIRST_SUPERUSER_EMAIL: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
@@ -57,7 +54,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ENCRYPT_KEY = secrets.token_urlsafe(32)
     BACKEND_CORS_ORIGINS: list[str] | list[AnyHttpUrl]
-
+    
     @validator("BACKEND_CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: str | list[str]) -> list[str] | str:
         if isinstance(v, str) and not v.startswith("["):

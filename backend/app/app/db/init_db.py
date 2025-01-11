@@ -1,9 +1,9 @@
-from sqlmodel.ext.asyncio.session import AsyncSession
 from app import crud
 from app.schemas.role_schema import IRoleCreate
 from app.core.config import settings
 from app.schemas.user_schema import IUserCreate
 from app.schemas.group_schema import IGroupCreate
+from app.db import get_db
 
 roles: list[IRoleCreate] = [
     IRoleCreate(name="admin", description="This the Admin role"),
@@ -38,43 +38,31 @@ users: list[dict[str, str | IUserCreate]] = [
 ]
 
 
-async def init_db(db_session: AsyncSession) -> None:
+async def init_db() -> None:
+    db = await get_db()
     for role in roles:
-        role_current = await crud.role.get_role_by_name(
-            name=role.name, db_session=db_session
-        )
+        role_current = await crud.role.get_role_by_name(name=role.name)
         if not role_current:
-            await crud.role.create(obj_in=role, db_session=db_session)
+            await crud.role.create(obj_in=role)
 
     for user in users:
-        current_user = await crud.user.get_by_email(
-            email=user["data"].email, db_session=db_session
-        )
-        role = await crud.role.get_role_by_name(
-            name=user["role"], db_session=db_session
-        )
+        current_user = await crud.user.get_by_email(email=user["data"].email)
+        role = await crud.role.get_role_by_name(name=user["role"])
         if not current_user:
             user["data"].role_id = role.id
-            await crud.user.create_with_role(obj_in=user["data"], db_session=db_session)
+            await crud.user.create_with_role(obj_in=user["data"])
 
     for group in groups:
-        current_group = await crud.group.get_group_by_name(
-            name=group.name, db_session=db_session
-        )
+        current_group = await crud.group.get_group_by_name(name=group.name)
         if not current_group:
-            current_user = await crud.user.get_by_email(
-                email=users[0]["data"].email, db_session=db_session
-            )
+            current_user = await crud.user.get_by_email(email=users[0]["data"].email)
             new_group = await crud.group.create(
-                obj_in=group, created_by_id=current_user.id, db_session=db_session
+                obj_in=group, created_by_id=current_user.id
             )
-            current_users = []
-            for user in users:
-                current_users.append(
-                    await crud.user.get_by_email(
-                        email=user["data"].email, db_session=db_session
-                    )
-                )
+            current_users = [
+                await crud.user.get_by_email(email=user["data"].email)
+                for user in users
+            ]
             await crud.group.add_users_to_group(
-                users=current_users, group_id=new_group.id, db_session=db_session
+                users=current_users, group_id=new_group.id
             )
