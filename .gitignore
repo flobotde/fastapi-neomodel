@@ -132,3 +132,4 @@ sonarqube/logs
 .terraform
 
 .aider*
+neo4j/
