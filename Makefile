@@ -9,11 +9,9 @@ define SERVERS_JSON
 			"Name": "fastapi-neomodel",
 			"Group": "Servers",
 			"Host": "$(DATABASE_HOST)",
-			"Port": 5432,
-			"MaintenanceDB": "postgres",
+			"Port": 7687,
+			"MaintenanceDB": "neo4j",
 			"Username": "$(DATABASE_USER)",
-			"SSLMode": "prefer",
-			"PassFile": "/tmp/pgpassfile"
 		}
 	}
 }

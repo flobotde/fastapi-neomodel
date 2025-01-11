@@ -8,51 +8,42 @@ from pydantic.networks import EmailStr
 from typing import Any
 from app.crud.base_crud import CRUDBase
 from app.crud.user_follow_crud import user_follow as UserFollowCRUD
-from sqlmodel import select
 from uuid import UUID
-from sqlmodel.ext.asyncio.session import AsyncSession
+from neomodel.exceptions import DoesNotExist
 
 
 class CRUDUser(CRUDBase[User, IUserCreate, IUserUpdate]):
     async def get_by_email(
-        self, *, email: str, db_session: AsyncSession | None = None
+        self, *, email: str, db_session: Any = None
     ) -> User | None:
-        db_session = db_session or super().get_db().session
-        users = await db_session.execute(select(User).where(User.email == email))
-        return users.scalar_one_or_none()
+        try:
+            return await User.nodes.get(email=email)
+        except DoesNotExist:
+            return None
 
     async def get_by_id_active(self, *, id: UUID) -> User | None:
-        user = await super().get(id=id)
-        if not user:
+        user = await super().get(uid=id)
+        if not user or not user.is_active:
             return None
-        if user.is_active is False:
-            return None
-
         return user
 
     async def create_with_role(
-        self, *, obj_in: IUserCreate, db_session: AsyncSession | None = None
+        self, *, obj_in: IUserCreate, db_session: Any = None
     ) -> User:
-        db_session = db_session or super().get_db().session
         db_obj = User.from_orm(obj_in)
         db_obj.hashed_password = get_password_hash(obj_in.password)
-        db_session.add(db_obj)
-        await db_session.commit()
-        await db_session.refresh(db_obj)
+        await db_obj.save()
         return db_obj
 
     async def update_is_active(
         self, *, db_obj: list[User], obj_in: int | str | dict[str, Any]
-    ) -> User | None:
-        response = None
-        db_session = super().get_db().session
-        for x in db_obj:
-            x.is_active = obj_in.is_active
-            db_session.add(x)
-            await db_session.commit()
-            await db_session.refresh(x)
-            response.append(x)
-        return response
+    ) -> list[User]:
+        updated_users = []
+        for user in db_obj:
+            user.is_active = obj_in.is_active
+            await user.save()
+            updated_users.append(user)
+        return updated_users
 
     async def authenticate(self, *, email: EmailStr, password: str) -> User | None:
         user = await self.get_by_email(email=email)
@@ -71,48 +62,41 @@ class CRUDUser(CRUDBase[User, IUserCreate, IUserUpdate]):
         width: int,
         file_format: str,
     ) -> User:
-        db_session = super().get_db().session
-        user.image = ImageMedia(
+        image_media = ImageMedia(
             media=Media.from_orm(image),
             height=heigth,
             width=width,
             file_format=file_format,
         )
-        db_session.add(user)
-        await db_session.commit()
-        await db_session.refresh(user)
+        await image_media.save()
+        user.image.connect(image_media)
+        await user.save()
         return user
 
     async def remove(
-        self, *, id: UUID | str, db_session: AsyncSession | None = None
+        self, *, id: UUID | str, db_session: Any = None
     ) -> User:
-        db_session = db_session or super().get_db().session
-        response = await db_session.execute(
-            select(self.model).where(self.model.id == id)
-        )
-        obj = response.scalar_one()
+        user = await self.get(uid=id)
+        if not user:
+            raise DoesNotExist("User not found")
 
-        followings = await UserFollowCRUD.get_follow_by_user_id(user_id=obj.id)
-        if followings:
-            for following in followings:
-                user = await self.get(id=following.target_user_id)
-                user.follower_count -= 1
-                db_session.add(user)
-                await db_session.delete(following)
+        # Handle follow relationships
+        followings = await user.following.all()
+        for following in followings:
+            target_user = await following.followers.get()
+            target_user.follower_count -= 1
+            await target_user.save()
+            await user.following.disconnect(following)
 
-        followeds = await UserFollowCRUD.get_follow_by_target_user_id(
-            target_user_id=obj.id
-        )
-        if followeds:
-            for followed in followeds:
-                user = await self.get(id=followed.user_id)
-                user.following_count -= 1
-                db_session.add(user)
-                await db_session.delete(followed)
+        followers = await user.followers.all()
+        for follower in followers:
+            source_user = await follower.following.get()
+            source_user.following_count -= 1
+            await source_user.save()
+            await user.followers.disconnect(follower)
 
-        await db_session.delete(obj)
-        await db_session.commit()
-        return obj
+        await user.delete()
+        return user
 
 
 user = CRUDUser(User)

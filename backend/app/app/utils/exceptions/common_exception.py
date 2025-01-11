@@ -1,9 +1,9 @@
 from typing import Any, Dict, Generic, Optional, Type, TypeVar, Union
 from uuid import UUID
 from fastapi import HTTPException, status
-from sqlmodel import SQLModel
+from neomodel import StructuredNode
 
-ModelType = TypeVar("ModelType", bound=SQLModel)
+ModelType = TypeVar("ModelType", bound=StructuredNode)
 
 
 class ContentNoChangeException(HTTPException):

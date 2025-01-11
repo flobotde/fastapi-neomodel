@@ -185,7 +185,7 @@ This template allows users can upload their photos. The images are stored using 
 
 
 ## Production Deployment
-Remember to use a persistant PostgreSQL database, update the new credentials on .env file and use this command to run the project in a production environment. For testing this configuration on localhost you can uncomment the database container and 
+Remember to use a persistant Neo4J database, update the new credentials on .env file and use this command to run the project in a production environment. For testing this configuration on localhost you can uncomment the database container and 
 depends_on of fastapi container otherwise it will not work on a local environment.
 
 *Using docker compose command*

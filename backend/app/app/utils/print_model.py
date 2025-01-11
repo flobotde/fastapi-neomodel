@@ -1,12 +1,14 @@
 from fastapi.encoders import jsonable_encoder
 from typing import TypeVar
-from sqlmodel import SQLModel
+from neomodel import StructuredNode
 
-ModelType = TypeVar("ModelType", bound=SQLModel)
+ModelType = TypeVar("ModelType", bound=StructuredNode)
 
 
 def print_model(text: str = "", model: ModelType = []):
     """
-    It prints sqlmodel responses for complex relationship models.
+    It prints neomodel responses for complex relationship models.
     """
-    return print(text, jsonable_encoder(model))
+    if isinstance(model, (list, tuple)):
+        return print(text, [jsonable_encoder(m.__properties__) for m in model])
+    return print(text, jsonable_encoder(model.__properties__))

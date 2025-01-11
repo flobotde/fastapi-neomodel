@@ -46,7 +46,7 @@ from app.schemas.user_follow_schema import (
     IUserFollowReadCommon,
 )
 from fastapi_pagination import Params
-from sqlmodel import and_, select, col, or_, text
+from neomodel import db
 
 router = APIRouter()
 
@@ -65,7 +65,10 @@ async def read_users_list(
     - admin
     - manager
     """
-    users = await crud.user.get_multi_paginated(params=params)
+    users = await User.nodes.filter(is_active=True).order_by('first_name').paginate(
+        page=params.page,
+        per_page=params.size
+    )
     return create_response(data=users)
 
 
@@ -76,7 +79,7 @@ async def read_users_list_by_role_name(
         IUserStatus,
         Query(
             title="User status",
-            description="User status, It is optional. Default is active",
+            description="User status (optional, default is active)",
         ),
     ] = IUserStatus.active,
     role_name: str = "",
@@ -92,28 +95,14 @@ async def read_users_list_by_role_name(
     - admin
     """
     user_status = True if user_status == IUserStatus.active else False
-    query = (
-        select(User)
-        .join(Role, User.role_id == Role.id)
-        .where(
-            and_(
-                col(Role.name).ilike(f"%{role_name}%"),
-                User.is_active == user_status,
-                or_(
-                    col(User.first_name).ilike(f"%{name}%"),
-                    col(User.last_name).ilike(f"%{name}%"),
-                    text(
-                        f"""'{name}' % concat("User".last_name, ' ', "User".first_name)"""
-                    ),
-                    text(
-                        f"""'{name}' % concat("User".first_name, ' ', "User".last_name)"""
-                    ),
-                ),
-            )
-        )
-        .order_by(User.first_name)
+    users = await User.nodes.filter(
+        role__name__icontains=role_name,
+        is_active=user_status,
+        first_name__icontains=name
+    ).order_by('first_name').paginate(
+        page=params.page,
+        per_page=params.size
     )
-    users = await crud.user.get_multi_paginated(query=query, params=params)
     return create_response(data=users)
 
 
@@ -131,8 +120,9 @@ async def get_user_list_order_by_created_at(
     - admin
     - manager
     """
-    users = await crud.user.get_multi_paginated_ordered(
-        params=params, order_by="created_at"
+    users = await User.nodes.order_by('-created_at').paginate(
+        page=params.page,
+        per_page=params.size
     )
     return create_response(data=users)
 
@@ -145,19 +135,11 @@ async def get_following(
     """
     Lists the people who the authenticated user follows.
     """
-    query = (
-        select(
-            User.id,
-            User.first_name,
-            User.last_name,
-            User.follower_count,
-            User.following_count,
-            UserFollow.is_mutual,
-        )
-        .join(UserFollow, User.id == UserFollow.target_user_id)
-        .where(UserFollow.user_id == current_user.id)
+    users = await current_user.following.all()
+    paginated_users = users.paginate(
+        page=params.page,
+        per_page=params.size
     )
-    users = await crud.user.get_multi_paginated(query=query, params=params)
     return create_response(data=users)
 
 
@@ -173,9 +155,7 @@ async def check_is_followed_by_user_id(
     """
     Check if a person is followed by the authenticated user
     """
-    result = await crud.user_follow.get_follow_by_user_id_and_target_user_id(
-        user_id=user.id, target_user_id=current_user.id
-    )
+    result = await current_user.followers.is_connected(user)
     if not result:
         raise UserNotFollowedException(user_name=user.last_name)
 
@@ -190,19 +170,11 @@ async def get_followers(
     """
     Lists the people following the authenticated user.
     """
-    query = (
-        select(
-            User.id,
-            User.first_name,
-            User.last_name,
-            User.follower_count,
-            User.following_count,
-            UserFollow.is_mutual,
-        )
-        .join(UserFollow, User.id == UserFollow.user_id)
-        .where(UserFollow.target_user_id == current_user.id)
+    users = await current_user.followers.all()
+    paginated_users = users.paginate(
+        page=params.page,
+        per_page=params.size
     )
-    users = await crud.user.get_multi_paginated(params=params, query=query)
     return create_response(data=users)
 
 
@@ -215,19 +187,12 @@ async def get_user_followed_by_user_id(
     """
     Lists the people following the specified user.
     """
-    query = (
-        select(
-            User.id,
-            User.first_name,
-            User.last_name,
-            User.follower_count,
-            User.following_count,
-            UserFollow.is_mutual,
-        )
-        .join(UserFollow, User.id == UserFollow.user_id)
-        .where(UserFollow.target_user_id == user_id)
+    user = await User.nodes.get(uid=user_id)
+    users = await user.followers.all()
+    paginated_users = users.paginate(
+        page=params.page,
+        per_page=params.size
     )
-    users = await crud.user.get_multi_paginated(params=params, query=query)
     return create_response(data=users)
 
 
@@ -240,19 +205,12 @@ async def get_user_following_by_user_id(
     """
     Lists the people who the specified user follows.
     """
-    query = (
-        select(
-            User.id,
-            User.first_name,
-            User.last_name,
-            User.follower_count,
-            User.following_count,
-            UserFollow.is_mutual,
-        )
-        .join(UserFollow, User.id == UserFollow.target_user_id)
-        .where(UserFollow.user_id == user_id)
+    user = await User.nodes.get(uid=user_id)
+    users = await user.following.all()
+    paginated_users = users.paginate(
+        page=params.page,
+        per_page=params.size
     )
-    users = await crud.user.get_multi_paginated(query=query, params=params)
     return create_response(data=users)
 
 
@@ -272,17 +230,10 @@ async def check_a_user_is_followed_another_user_by_id(
     if user_id == target_user_id:
         raise SelfFollowedException()
 
-    user = await crud.user.get(id=user_id)
-    if not user:
-        raise IdNotFoundException(User, id=user_id)
-
-    target_user = await crud.user.get(id=target_user_id)
-    if not target_user:
-        raise IdNotFoundException(User, id=target_user_id)
-
-    result = await crud.user_follow.get_follow_by_user_id_and_target_user_id(
-        user_id=user_id, target_user_id=target_user_id
-    )
+    user = await User.nodes.get(uid=user_id)
+    target_user = await User.nodes.get(uid=target_user_id)
+    
+    result = await user.following.is_connected(target_user)
     if not result:
         raise UserNotFollowedException(
             user_name=user.last_name, target_user_name=target_user.last_name
@@ -299,21 +250,13 @@ async def follow_a_user_by_id(
     """
     if target_user_id == current_user.id:
         raise SelfFollowedException()
-    target_user = await crud.user.get(id=target_user_id)
-    if not target_user:
-        raise IdNotFoundException(User, id=target_user_id)
-
-    current_follow_user = (
-        await crud.user_follow.get_follow_by_user_id_and_target_user_id(
-            user_id=current_user.id, target_user_id=target_user_id
-        )
-    )
-    if current_follow_user:
+    target_user = await User.nodes.get(uid=target_user_id)
+    
+    if await current_user.following.is_connected(target_user):
         raise UserFollowedException(target_user_name=target_user.last_name)
 
-    new_user_follow = await crud.user_follow.follow_a_user_by_target_user_id(
-        user=current_user, target_user=target_user
-    )
+    await current_user.following.connect(target_user)
+    new_user_follow = await current_user.following.relationship(target_user)
     return create_response(data=new_user_follow)
 
 
@@ -327,22 +270,13 @@ async def unfollowing_a_user_by_id(
     """
     if target_user_id == current_user.id:
         raise SelfFollowedException()
-    target_user = await crud.user.get(id=target_user_id)
-    if not target_user:
-        raise IdNotFoundException(User, id=target_user_id)
-
-    current_follow_user = await crud.user_follow.get_follow_by_target_user_id(
-        user_id=current_user.id, target_user_id=target_user_id
-    )
-
-    if not current_follow_user:
+    target_user = await User.nodes.get(uid=target_user_id)
+    
+    if not await current_user.following.is_connected(target_user):
         raise UserNotFollowedException(user_name=target_user.last_name)
 
-    user_follow = await crud.user_follow.unfollow_a_user_by_id(
-        user_follow_id=current_follow_user.id,
-        user=current_user,
-        target_user=target_user,
-    )
+    await current_user.following.disconnect(target_user)
+    user_follow = await current_user.following.relationship(target_user)
     return create_response(data=user_follow)
 
 

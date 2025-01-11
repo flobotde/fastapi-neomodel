@@ -1,11 +1,12 @@
 from typing import TypeVar
 from pydantic import BaseModel
-from sqlmodel import SQLModel
+from neomodel import StructuredNode
 
 
 SchemaType = TypeVar("SchemaType", bound=BaseModel)
-ModelType = TypeVar("ModelType", bound=SQLModel)
+ModelType = TypeVar("ModelType", bound=StructuredNode)
 
 
 def map_models_schema(schema: SchemaType, models: list[ModelType]):
-    return [schema.from_orm(model) for model in models]
+    """Map neomodel nodes to Pydantic schemas"""
+    return [schema.parse_obj(model.__properties__) for model in models]

@@ -3,6 +3,7 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 from app import crud
+from app.db.session import get_db
 from app.schemas.common_schema import IChatResponse, IUserMessage
 from app.utils.uuid6 import uuid7
 from fastapi import (
@@ -22,7 +23,6 @@ from app.api.v1.api import api_router as api_router_v1
 from app.core.config import ModeEnum, settings
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
-from fastapi_async_sqlalchemy import SQLAlchemyMiddleware, db
 from contextlib import asynccontextmanager
 from app.utils.fastapi_globals import g, GlobalsMiddleware
 from transformers import pipeline
@@ -31,7 +31,6 @@ from jose import jwt
 from fastapi_limiter.depends import WebSocketRateLimiter
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage
-from sqlalchemy.pool import NullPool, QueuePool
 
 
 async def user_id_identifier(request: Request):
@@ -93,19 +92,6 @@ app = FastAPI(
 )
 
 
-app.add_middleware(
-    SQLAlchemyMiddleware,
-    db_url=settings.ASYNC_DATABASE_URI,
-    engine_args={
-        "echo": False,
-        # "pool_pre_ping": True,
-        # "pool_size": settings.POOL_SIZE,
-        # "max_overflow": 64,
-        "poolclass": NullPool
-        if settings.MODE == ModeEnum.testing
-        else QueuePool,  # Asincio pytest works with NullPool
-    },
-)
 app.add_middleware(GlobalsMiddleware)
 
 # Set all CORS origins enabled
@@ -154,7 +140,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: UUID):
     chat = ChatOpenAI(temperature=0, openai_api_key=settings.OPENAI_API_KEY)
     chat_history = []
 
-    async with db():
+    async with get_db():
         user = await crud.user.get_by_id_active(id=user_id)
         if user is not None:
             await redis_client.set(key, str(websocket))
